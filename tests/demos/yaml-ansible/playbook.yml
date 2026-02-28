@@ -1,0 +1,6 @@
+---
+- hosts: all
+  tasks:
+    - name: broken task
+      debug
+        msg: hi

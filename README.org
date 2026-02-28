@@ -1,0 +1,163 @@
+#+title: lsp-mux
+
+Pure Elisp LSP multiplexer for Emacs.
+
+* Goals
+- Run multiple LSP backends behind one client-facing endpoint.
+- Keep transport, routing, and merge logic fully in Elisp.
+- Provide deterministic merge behavior for diagnostics, completion,
+  code actions, and definitions.
+
+* Current Status
+This repository currently includes:
+- incremental LSP frame parser (Content-Length based)
+- method routing rules
+- capability merge helper
+- request fan-out and response aggregation for multi-backend sessions
+- first-success/merge routing for common request types
+- completion and codeAction merged output with backend attribution
+- diagnostics merge, dedup, and backend attribution
+- backend-initiated request passthrough with id remapping
+- `$/cancelRequest` id remapping from client ids to backend ids
+- send-path error isolation so one backend failure does not block others
+- method-level backend allowlist for both requests and notifications
+- capability-aware target pruning after initialize (e.g. hoverProvider)
+- dynamic capability updates via client/registerCapability and unregisterCapability
+- extended capability gating for common methods (e.g. workspace/symbol, semanticTokens)
+- capability cache resets on each initialize cycle
+- backends with failed/empty initialize capability state are conservatively pruned for capability-gated methods
+- resolve-style follow-up requests carrying `:lsp-mux-backend` are routed to the tagged backend only
+- resolve requests without tags are pruned by provider resolve capability when available
+- textDocument/didClose clears cached aggregated diagnostics for the closed URI
+- session stop clears pending/runtime caches and cancels pending timers
+- document sync notifications (didOpen/didChange/didSave/didClose) always broadcast to all backends
+- backend process exit triggers backend detachment and related state cleanup
+- TCP server entrypoint for client-facing LSP endpoint
+- minimal stdio frontend API: `lsp-mux-stdio-open/feed/close`
+- optional runtime trace buffer for debugging
+- ERT coverage for parser/routing/aggregation and passthrough paths
+
+* Validated Backend Combinations
+The following combinations have been verified against real language servers
+using the demo workflow (diagnostics + pull diagnostics + codeAction).
+
+| Combination                         | Status        | Notes |
+|-------------------------------------+---------------+-------|
+| typescript-language-server + vscode-eslint-language-server | Verified | TS error + ESLint warnings confirmed through lsp-mux. |
+| typescript-language-server + vscode-eslint-language-server + tailwindcss-language-server | Verified (ERT integration) | Real backend integration test: initialize + diagnostics pull through lsp-mux. |
+| pyright-langserver + ruff            | Verified (ERT integration) | Real backend integration test observes diagnostics flow after dynamic capability registration. |
+| gopls + golangci-lint-langserver     | Verified (ERT integration) | Integration checks gopls diagnostics plus golangci capability contribution in merged initialize response. |
+| bash-language-server (x2 instances)  | Verified (ERT integration) | Multi-backend diagnostics verified with two real bash-language-server processes. |
+| yaml-language-server + ansible-language-server | Verified (ERT integration) | Real backend integration test confirms diagnostics from both yamlls and ansible backends. |
+
+Compatibility note: lsp-mux is designed to be generic, but server-specific
+workspace/configuration behavior may require targeted normalization and
+regression tests for each combination.
+
+* Quick Start (no manual host/port needed)
+Example in Emacs:
+
+#+begin_src emacs-lisp
+(require 'lsp-mux)
+
+(setq lsp-mux-backend-commands
+      '(("pyright" "pyright-langserver" "--stdio")
+        ("ruff" "ruff" "server")))
+
+;; Optional: constrain specific methods to selected backends.
+(setq lsp-mux-method-backends
+      '(("textDocument/hover" . ("pyright"))
+        ("textDocument/codeAction" . ("ruff" "pyright"))))
+;; When configured, backend order in each list is respected for routing.
+
+;; auto-selects a free localhost port by default
+(lsp-mux-start)
+#+end_src
+
+Then point Eglot to lsp-mux:
+
+#+begin_src emacs-lisp
+(defun my/lsp-mux-eglot-contact (&optional _interactive _project)
+  (lsp-mux-eglot-contact))
+
+(add-to-list 'eglot-server-programs
+             '((python-mode python-ts-mode)
+               . my/lsp-mux-eglot-contact))
+#+end_src
+
+Notes:
+- This is an early core implementation.
+- Minimal stdio frontend API is available (`lsp-mux-stdio-open/feed/close`).
+
+* Demo: TS + ESLint + Tailwind (eglot)
+Use this as a template (replace the local paths to match your setup).
+If `lsp-mux` is already installed as a package, you can skip `load-path`.
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "/path/to/lsp-mux")
+(require 'lsp-mux)
+
+(let* ((demo-root "/path/to/your-frontend-project")
+       (ts-ls (expand-file-name "node_modules/.bin/typescript-language-server" demo-root))
+       (eslint-ls (expand-file-name "node_modules/.bin/vscode-eslint-language-server" demo-root))
+       (tailwind-ls (expand-file-name "node_modules/.bin/tailwindcss-language-server" demo-root)))
+  (setq lsp-mux-backend-commands
+        `(("ts" ,ts-ls "--stdio")
+          ("eslint" ,eslint-ls "--stdio")
+          ("tailwind" ,tailwind-ls "--stdio"))))
+
+(setq lsp-mux-method-backends
+      '(("textDocument/hover" . ("ts"))
+        ("textDocument/codeAction" . ("eslint" "ts" "tailwind"))
+        ("textDocument/completion" . ("ts" "tailwind"))
+        ("textDocument/diagnostic" . ("ts" "eslint" "tailwind"))))
+
+(with-eval-after-load 'eglot
+  ;; Include tsx-ts-mode so App.tsx is actually managed by eglot.
+  (add-to-list 'eglot-server-programs
+               '((typescript-ts-mode typescript-mode tsx-ts-mode)
+                 . (lambda (&optional _interactive _project)
+                     (lsp-mux-eglot-contact)))))
+#+end_src
+
+How to see Tailwind diagnostics:
+1. `M-x lsp-mux-start`
+2. Open your TSX file (for example `src/App.tsx`) in the frontend project
+3. `M-x eglot-ensure`
+4. Run `M-x flymake-show-buffer-diagnostics`
+
+Expected file line:
+- `src/App.tsx:3` contains `bg-not-a-real-class` and should trigger Tailwind warning.
+
+Troubleshooting:
+- If no diagnostics appear in `App.tsx`, verify `(eglot-managed-p)` returns `t`.
+- Check major mode with `M-: major-mode`; if it is `tsx-ts-mode`, ensure that mode is in `eglot-server-programs`.
+- Do not use `(eval (lsp-mux-eglot-contact))` in `eglot-server-programs`; use a function/lambda contact.
+
+* Run tests
+#+begin_src sh
+make test
+#+end_src
+`make test` prefers newer source over stale bytecode during load.
+
+Integration fixture files for the backend matrix live under `tests/demos/`.
+If required external server binaries are absent, related ERT tests are skipped.
+
+* Stdio Frontend API (minimal)
+For integrations that already own transport IO, use:
+
+#+begin_src emacs-lisp
+(setq my-mux
+      (lsp-mux-stdio-open
+       '(("pyright" "pyright-langserver" "--stdio")
+         ("ruff" "ruff" "server"))
+       (lambda (framed)
+         ;; write framed LSP string to client transport
+         (my-write-to-stdout framed))))
+
+;; feed chunks received from client transport
+(lsp-mux-stdio-feed my-mux incoming-chunk)
+
+;; cleanup
+(lsp-mux-stdio-close my-mux)
+#+end_src
