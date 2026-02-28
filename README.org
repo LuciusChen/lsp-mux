@@ -39,7 +39,7 @@ This repository currently includes:
 
 * Validated Backend Combinations
 The following combinations have been verified against real language servers
-using the demo workflow (diagnostics + pull diagnostics + codeAction).
+using integration tests (diagnostics, pull diagnostics, and routing behavior).
 
 | Combination                         | Status        | Notes |
 |-------------------------------------+---------------+-------|
@@ -89,18 +89,17 @@ Notes:
 - This is an early core implementation.
 - Minimal stdio frontend API is available (`lsp-mux-stdio-open/feed/close`).
 
-* Demo: TS + ESLint + Tailwind (eglot)
-Use this as a template (replace the local paths to match your setup).
-If `lsp-mux` is already installed as a package, you can skip `load-path`.
+* Recommended Eglot Setup: TS + ESLint + Tailwind
+Use this as the baseline multi-backend setup. Keep paths project-relative so
+the config is portable.
 
 #+begin_src emacs-lisp
-(add-to-list 'load-path "/path/to/lsp-mux")
 (require 'lsp-mux)
 
-(let* ((demo-root "/path/to/your-frontend-project")
-       (ts-ls (expand-file-name "node_modules/.bin/typescript-language-server" demo-root))
-       (eslint-ls (expand-file-name "node_modules/.bin/vscode-eslint-language-server" demo-root))
-       (tailwind-ls (expand-file-name "node_modules/.bin/tailwindcss-language-server" demo-root)))
+(let* ((project-root "/path/to/your-frontend-project")
+       (ts-ls (expand-file-name "node_modules/.bin/typescript-language-server" project-root))
+       (eslint-ls (expand-file-name "node_modules/.bin/vscode-eslint-language-server" project-root))
+       (tailwind-ls (expand-file-name "node_modules/.bin/tailwindcss-language-server" project-root)))
   (setq lsp-mux-backend-commands
         `(("ts" ,ts-ls "--stdio")
           ("eslint" ,eslint-ls "--stdio")
@@ -112,27 +111,27 @@ If `lsp-mux` is already installed as a package, you can skip `load-path`.
         ("textDocument/completion" . ("ts" "tailwind"))
         ("textDocument/diagnostic" . ("ts" "eslint" "tailwind"))))
 
+(lsp-mux-start)
+
 (with-eval-after-load 'eglot
-  ;; Include tsx-ts-mode so App.tsx is actually managed by eglot.
   (add-to-list 'eglot-server-programs
                '((typescript-ts-mode typescript-mode tsx-ts-mode)
                  . (lambda (&optional _interactive _project)
                      (lsp-mux-eglot-contact)))))
 #+end_src
 
-How to see Tailwind diagnostics:
+Verification checklist:
 1. `M-x lsp-mux-start`
-2. Open your TSX file (for example `src/App.tsx`) in the frontend project
+2. Open a TS/TSX file in your frontend project
 3. `M-x eglot-ensure`
 4. Run `M-x flymake-show-buffer-diagnostics`
-
-Expected file line:
-- `src/App.tsx:3` contains `bg-not-a-real-class` and should trigger Tailwind warning.
+5. Confirm diagnostics from TS, ESLint, and Tailwind are present
 
 Troubleshooting:
-- If no diagnostics appear in `App.tsx`, verify `(eglot-managed-p)` returns `t`.
-- Check major mode with `M-: major-mode`; if it is `tsx-ts-mode`, ensure that mode is in `eglot-server-programs`.
+- If no diagnostics appear, verify `(eglot-managed-p)` returns `t`.
+- Check major mode with `M-: major-mode`; if it is `tsx-ts-mode`, ensure `tsx-ts-mode` is listed in `eglot-server-programs`.
 - Do not use `(eval (lsp-mux-eglot-contact))` in `eglot-server-programs`; use a function/lambda contact.
+- Enable `lsp-mux-enable-trace` to inspect routing/merge behavior in `lsp-mux-trace-buffer`.
 
 * Run tests
 #+begin_src sh
