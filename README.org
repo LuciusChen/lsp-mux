@@ -84,17 +84,16 @@ Notes:
 - Minimal stdio frontend API is available (`lsp-mux-stdio-open/feed/close`).
 
 * Recommended Eglot Setup: TS + ESLint + Tailwind
-Use this as the baseline multi-backend setup. Keep paths project-relative so
-the config is portable.
+Use this as the baseline multi-backend setup for multi-project workflows
+with globally installed language servers in PATH.
 
 #+begin_src emacs-lisp
 (require 'lsp-mux)
 
 (lsp-mux-configure
- :project-root "/path/to/your-frontend-project"
- :backends '(("ts" "node_modules/.bin/typescript-language-server" "--stdio")
-             ("eslint" "node_modules/.bin/vscode-eslint-language-server" "--stdio")
-             ("tailwind" "node_modules/.bin/tailwindcss-language-server" "--stdio"))
+ :backends '(("ts" "typescript-language-server" "--stdio")
+             ("eslint" "vscode-eslint-language-server" "--stdio")
+             ("tailwind" "tailwindcss-language-server" "--stdio"))
  :method-backends '(("textDocument/hover" . ("ts"))
                     ("textDocument/codeAction" . ("eslint" "ts" "tailwind"))
                     ("textDocument/completion" . ("ts" "tailwind"))
@@ -111,6 +110,9 @@ the config is portable.
 `lsp-mux-configure` is optional convenience. You can still set
 `lsp-mux-backend-commands` / `lsp-mux-method-backends` directly when you need
 full manual control.
+
+Use `:project-root` only when backend program paths are project-relative
+(for example `node_modules/.bin/...`).
 
 Verification checklist:
 1. `M-x lsp-mux-start`
