@@ -60,18 +60,12 @@ Example in Emacs:
 #+begin_src emacs-lisp
 (require 'lsp-mux)
 
-(setq lsp-mux-backend-commands
-      '(("pyright" "pyright-langserver" "--stdio")
-        ("ruff" "ruff" "server")))
-
-;; Optional: constrain specific methods to selected backends.
-(setq lsp-mux-method-backends
-      '(("textDocument/hover" . ("pyright"))
-        ("textDocument/codeAction" . ("ruff" "pyright"))))
-;; When configured, backend order in each list is respected for routing.
-
-;; auto-selects a free localhost port by default
-(lsp-mux-start)
+(lsp-mux-configure
+ :backends '(("pyright" "pyright-langserver" "--stdio")
+             ("ruff" "ruff" "server"))
+ :method-backends '(("textDocument/hover" . ("pyright"))
+                    ("textDocument/codeAction" . ("ruff" "pyright")))
+ :start t)
 #+end_src
 
 Then point Eglot to lsp-mux:
@@ -96,22 +90,16 @@ the config is portable.
 #+begin_src emacs-lisp
 (require 'lsp-mux)
 
-(let* ((project-root "/path/to/your-frontend-project")
-       (ts-ls (expand-file-name "node_modules/.bin/typescript-language-server" project-root))
-       (eslint-ls (expand-file-name "node_modules/.bin/vscode-eslint-language-server" project-root))
-       (tailwind-ls (expand-file-name "node_modules/.bin/tailwindcss-language-server" project-root)))
-  (setq lsp-mux-backend-commands
-        `(("ts" ,ts-ls "--stdio")
-          ("eslint" ,eslint-ls "--stdio")
-          ("tailwind" ,tailwind-ls "--stdio"))))
-
-(setq lsp-mux-method-backends
-      '(("textDocument/hover" . ("ts"))
-        ("textDocument/codeAction" . ("eslint" "ts" "tailwind"))
-        ("textDocument/completion" . ("ts" "tailwind"))
-        ("textDocument/diagnostic" . ("ts" "eslint" "tailwind"))))
-
-(lsp-mux-start)
+(lsp-mux-configure
+ :project-root "/path/to/your-frontend-project"
+ :backends '(("ts" "node_modules/.bin/typescript-language-server" "--stdio")
+             ("eslint" "node_modules/.bin/vscode-eslint-language-server" "--stdio")
+             ("tailwind" "node_modules/.bin/tailwindcss-language-server" "--stdio"))
+ :method-backends '(("textDocument/hover" . ("ts"))
+                    ("textDocument/codeAction" . ("eslint" "ts" "tailwind"))
+                    ("textDocument/completion" . ("ts" "tailwind"))
+                    ("textDocument/diagnostic" . ("ts" "eslint" "tailwind")))
+ :start t)
 
 (with-eval-after-load 'eglot
   (add-to-list 'eglot-server-programs
@@ -119,6 +107,10 @@ the config is portable.
                  . (lambda (&optional _interactive _project)
                      (lsp-mux-eglot-contact)))))
 #+end_src
+
+`lsp-mux-configure` is optional convenience. You can still set
+`lsp-mux-backend-commands` / `lsp-mux-method-backends` directly when you need
+full manual control.
 
 Verification checklist:
 1. `M-x lsp-mux-start`

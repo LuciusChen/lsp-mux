@@ -94,6 +94,10 @@ Each element is a list: (NAME PROGRAM ARG...)."
                        (repeat :tag "Args" string)))
   :group 'lsp-mux)
 
+(defconst lsp-mux--configure-valid-keys
+  '(:project-root :backends :method-backends :expand-relative :start)
+  "Keyword arguments accepted by `lsp-mux-configure'.")
+
 (defcustom lsp-mux-eslint-fallback-configuration
   '(:validate "on"
     :run "onType"
@@ -1279,6 +1283,63 @@ transport (typically stdout)."
 (defun lsp-mux-stdio-close (session)
   "Close stdio SESSION and all backend processes."
   (lsp-mux-session-stop session))
+
+(defun lsp-mux--normalize-backend-spec (spec project-root expand-relative)
+  "Normalize backend SPEC using PROJECT-ROOT when EXPAND-RELATIVE is non-nil."
+  (pcase spec
+    (`(,name ,program . ,args)
+     (unless (and (stringp name) (stringp program))
+       (user-error "Invalid backend spec: %S" spec))
+     (let ((resolved-program
+            (if (and expand-relative
+                     project-root
+                     (not (file-name-absolute-p program))
+                     (string-match-p "/" program))
+                (expand-file-name program project-root)
+              program)))
+       (cons name (cons resolved-program args))))
+    (_ (user-error "Invalid backend spec: %S" spec))))
+
+(defun lsp-mux-configure (&rest options)
+  "Configure lsp-mux from OPTIONS.
+
+Supported keyword arguments:
+- `:project-root' base path used for relative backend program paths.
+- `:backends' backend specs in (NAME PROGRAM ARG...) format (required).
+- `:method-backends' optional method allowlist alist.
+- `:expand-relative' non-nil expands relative PROGRAM values under `:project-root'.
+- `:start' non-nil starts lsp-mux after applying configuration.
+
+This function updates `lsp-mux-backend-commands' and, when provided,
+`lsp-mux-method-backends'.  It returns the final backend command list."
+  (let ((plist options))
+    (while plist
+      (unless (memq (car plist) lsp-mux--configure-valid-keys)
+        (user-error "Unknown lsp-mux-configure option: %S" (car plist)))
+      (setq plist (cddr plist))))
+  (let* ((project-root (when-let* ((root (plist-get options :project-root)))
+                          (expand-file-name root)))
+         (has-backends (plist-member options :backends))
+         (backends (plist-get options :backends))
+         (has-method-backends (plist-member options :method-backends))
+         (expand-relative (if (plist-member options :expand-relative)
+                              (plist-get options :expand-relative)
+                            t))
+         (start (plist-get options :start)))
+    (unless has-backends
+      (user-error "lsp-mux-configure requires :backends"))
+    (unless (and (listp backends) backends)
+      (user-error ":backends must be a non-empty list"))
+    (setq lsp-mux-backend-commands
+          (mapcar (lambda (spec)
+                    (lsp-mux--normalize-backend-spec
+                     spec project-root expand-relative))
+                  backends))
+    (when has-method-backends
+      (setq lsp-mux-method-backends (plist-get options :method-backends)))
+    (when start
+      (lsp-mux-start))
+    lsp-mux-backend-commands))
 
 (defun lsp-mux--session-clear-runtime-state (session)
   "Clear transient runtime state for SESSION."

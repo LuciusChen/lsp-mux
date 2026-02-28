@@ -73,6 +73,37 @@
     (should (eq (plist-get (plist-get merged :completionProvider) :resolveProvider) t))
     (should (eq (plist-get merged :renameProvider) t))))
 
+(ert-deftest lsp-mux-test-configure-expands-relative-programs ()
+  (let* ((lsp-mux-backend-commands nil)
+         (lsp-mux-method-backends nil)
+         (ret (lsp-mux-configure
+               :project-root "/tmp/demo"
+               :backends '(("ts" "node_modules/.bin/typescript-language-server" "--stdio")
+                           ("ruff" "ruff" "server"))
+               :method-backends '(("textDocument/hover" . ("ts"))))))
+    (should (equal ret lsp-mux-backend-commands))
+    (should (equal (nth 0 (nth 0 lsp-mux-backend-commands)) "ts"))
+    (should (equal (nth 1 (nth 0 lsp-mux-backend-commands))
+                   "/tmp/demo/node_modules/.bin/typescript-language-server"))
+    (should (equal (nth 1 (nth 1 lsp-mux-backend-commands)) "ruff"))
+    (should (equal lsp-mux-method-backends
+                   '(("textDocument/hover" . ("ts")))))))
+
+(ert-deftest lsp-mux-test-configure-method-backends-optional ()
+  (let ((lsp-mux-method-backends '(("textDocument/hover" . ("old")))))
+    (lsp-mux-configure :backends '(("a" "a-ls" "--stdio")))
+    (should (equal lsp-mux-method-backends
+                   '(("textDocument/hover" . ("old")))))))
+
+(ert-deftest lsp-mux-test-configure-starts-when-requested ()
+  (let ((started nil))
+    (cl-letf (((symbol-function 'lsp-mux-start)
+               (lambda ()
+                 (setq started t))))
+      (lsp-mux-configure :backends '(("a" "a-ls" "--stdio"))
+                         :start t))
+    (should started)))
+
 (ert-deftest lsp-mux-test-parser-single-frame ()
   (let* ((p (lsp-mux-parser-create))
          (payload "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}")
