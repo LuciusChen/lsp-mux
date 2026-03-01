@@ -1432,7 +1432,7 @@
     (should (string-match-p "\"method\":\"window/logMessage\"" (car writes)))))
 
 (ert-deftest lsp-mux-test-integration-ts-eslint-tailwind-pulldiag ()
-  (let* ((root "/Users/luciuschen/repos/lsp-mux-demo-frontend")
+  (let* ((root (expand-file-name "tests/demos/ts-eslint-tailwind" default-directory))
          (ts-bin (expand-file-name "node_modules/.bin/typescript-language-server" root))
          (eslint-bin (expand-file-name "node_modules/.bin/vscode-eslint-language-server" root))
          (tailwind-bin (expand-file-name "node_modules/.bin/tailwindcss-language-server" root)))
@@ -1617,7 +1617,7 @@
     (ert-skip "eglot not available"))
   (unless (executable-find "nc")
     (ert-skip "Missing nc command for eglot contact"))
-  (let* ((root "/Users/luciuschen/repos/lsp-mux-demo-frontend")
+  (let* ((root (expand-file-name "tests/demos/ts-eslint-tailwind" default-directory))
          (ts-bin (expand-file-name "node_modules/.bin/typescript-language-server" root))
          (eslint-bin (expand-file-name "node_modules/.bin/vscode-eslint-language-server" root))
          (tailwind-bin (expand-file-name "node_modules/.bin/tailwindcss-language-server" root))
